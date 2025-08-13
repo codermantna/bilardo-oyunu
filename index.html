@@ -43,11 +43,13 @@
     </div>
   </div>
 
+  <!-- Basit ses paketleri (base64 + short) -->
   <audio id="sfxHit"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAChAAAAAAA=" type="audio/wav"></audio>
   <audio id="sfxPocket"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAChAAAAAAA=" type="audio/wav"></audio>
 
   <script>
   (function(){
+    // Önemli sabitler
     const canvas = document.getElementById('table');
     const ctx = canvas.getContext('2d');
     const statusEl = document.getElementById('status');
@@ -58,29 +60,33 @@
     const sfxHit = document.getElementById('sfxHit');
     const sfxPocket = document.getElementById('sfxPocket');
 
-    const WIDTH = 900, HEIGHT = 450;
-    const BORDER = 40;
-    const BALL_R = 12;
-    const POCKET_R = 26;
+    const WIDTH = 900, HEIGHT = 450; // keçe alanı
+    const BORDER = 40;               // bant
+    const BALL_R = 12;               // top yarıçapı
+    const POCKET_R = 26;             // cep yarıçapı
+
     let origin = {x:(canvas.width-WIDTH)/2, y:(canvas.height-HEIGHT)/2};
 
+    // Fizik
     const FPS = 60;
     const DT = 1 / FPS;
-    const FRICTION = 0.994;
+    const FRICTION = 0.994; // gerçekçi yavaşlama (1 - çok yavaş)
     const VELOCITY_EPS = 0.02;
 
     let showGuide = true;
     let muted = false;
 
-    const players = ['Beyaz','Siyah'];
-    let currentPlayer = 1;
-    let assignedGroup = {1:null, 2:null};
+    // Oyun durumu (8-ball)
+    const players = ['Beyaz','Siyah']; // isim göstermek için (1/2)
+    let currentPlayer = 1; // 1 veya 2
+    let assignedGroup = {1:null, 2:null}; // 'solid' || 'stripe'
     let balls = [];
     let cueBall = null;
     let canShoot = true;
-    let lastTouchedBall = null;
+    let lastTouchedBall = null; // son temasa giren top id
     let pottedThisShot = [];
 
+    // Cepler
     const pockets = [
       {x:origin.x, y:origin.y},
       {x:origin.x + WIDTH/2, y:origin.y - 6},
@@ -90,41 +96,52 @@
       {x:origin.x + WIDTH, y:origin.y + HEIGHT}
     ];
 
+    // Yardımcı fonksiyonlar
     function rand(a,b){ return a + Math.random()*(b-a); }
     function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 
+    // Top objesi
     class Ball{
       constructor(x,y,number,color,group){
         this.x = x; this.y = y; this.vx=0; this.vy=0;
-        this.number = number; this.color = color; this.group = group;
+        this.number = number; this.color = color; this.group = group; // 'solid' veya 'stripe' veya 'cue' veya 'eight'
         this.inPocket = false;
       }
       speed(){ return Math.hypot(this.vx,this.vy); }
       step(){ if(this.inPocket) return; this.x += this.vx; this.y += this.vy; this.vx *= FRICTION; this.vy *= FRICTION; if(Math.abs(this.vx) < VELOCITY_EPS) this.vx = 0; if(Math.abs(this.vy) < VELOCITY_EPS) this.vy = 0; }
     }
 
+    // Başlangıç dizilimi 8-ball (triangle)
     function rack8(){
       balls = [];
+      // beyaz
       cueBall = new Ball(origin.x + WIDTH*0.25, origin.y + HEIGHT/2, 0, '#ffffff', 'cue');
       balls.push(cueBall);
 
+      // üçgen dizilim merkez sağ
       const apexX = origin.x + WIDTH*0.72;
       const apexY = origin.y + HEIGHT/2;
+      const order = [8,1,2,3,4,5,6,7]; // sadece görsel, renkleri aşağıda set ediyoruz
+
       let count = 1;
       for(let r=0;r<5;r++){
         for(let c=0;c<=r;c++){
           const x = apexX + r*(BALL_R*2*0.98);
           const y = apexY - r*BALL_R + c*(BALL_R*2);
-          let color='#d1d1d1', group='solid';
-          if(count===8){ color='#111'; group='eight'; }
-          else if(count%2===0){ color='#f4d35e'; group='stripe'; }
+          const number = count;
+          // renk ve grup
+          let color='#d1d1d1'; let group='solid';
+          if(number===8){ color='#111'; group='eight'; }
+          else if(number%2===0){ color='#f4d35e'; group='stripe'; }
           else { color='#ee6c4d'; group='solid'; }
-          balls.push(new Ball(x,y,count,color,group));
-          count++; if(count>15) break;
+          balls.push(new Ball(x,y,number,color,group));
+          count++;
+          if(count>15) break;
         }
         if(count>15) break;
       }
 
+      // reset oyunsal durum
       currentPlayer = 1; assignedGroup = {1:null,2:null}; canShoot = true; lastTouchedBall = null; pottedThisShot = [];
       updateStatus('Yeni dizi — Sıra: Oyuncu 1');
     }
@@ -138,14 +155,19 @@
 
     function updateStatus(txt){ statusEl.textContent = 'Durum: ' + txt; }
 
+    // Çizimler
     function drawTable(){
       ctx.clearRect(0,0,canvas.width,canvas.height);
+      // ahşap
+      ctx.fillStyle = '--wood';
       ctx.fillStyle = '#6b3e2e';
       roundRect(ctx, origin.x - BORDER, origin.y - BORDER, WIDTH + 2*BORDER, HEIGHT + 2*BORDER, 18, true);
+      // keçe
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--felt') || '#0f6b4a';
       roundRect(ctx, origin.x, origin.y, WIDTH, HEIGHT, 14, true);
+      // bant çizgileri
       ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth=2; ctx.strokeRect(origin.x+6, origin.y+6, WIDTH-12, HEIGHT-12);
-
+      // cepler
       for(const p of pockets){
         const grad = ctx.createRadialGradient(p.x,p.y,4,p.x,p.y,POCKET_R+8);
         grad.addColorStop(0,'#0008'); grad.addColorStop(1,'#000');
@@ -154,16 +176,27 @@
       }
     }
 
-    function drawBalls(){ for(const b of balls){ if(b.inPocket) continue; drawBall(b); } }
-    function drawBall(b){
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(b.x+4,b.y+5,BALL_R*1.05,BALL_R*0.7,0,0,Math.PI*2); ctx.fill();
-      const g = ctx.createRadialGradient(b.x-4,b.y-4,3,b.x,b.y,BALL_R+2);
-      g.addColorStop(0,'#fff'); g.addColorStop(0.14,'#fff'); g.addColorStop(0.16,b.color);
-      g.addColorStop(1, shade(b.color, -18));
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2); ctx.fill();
-      if(b.group !== 'cue'){ ctx.fillStyle = '#f3f6fb'; ctx.beginPath(); ctx.arc(b.x,b.y,BALL_R*0.5,0,Math.PI*2); ctx.fill(); ctx.fillStyle = '#111'; ctx.font='bold 10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(b.number), b.x, b.y+0.3); }
+    function drawBalls(){
+      for(const b of balls){ if(b.inPocket) continue; drawBall(b); }
     }
 
+    function drawBall(b){
+      // gölge
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(b.x+4,b.y+5,BALL_R*1.05,BALL_R*0.7,0,0,Math.PI*2); ctx.fill();
+      // top gölgelendirme
+      const g = ctx.createRadialGradient(b.x-4,b.y-4,3,b.x,b.y,BALL_R+2);
+      g.addColorStop(0,'#fff'); g.addColorStop(0.14,'#fff'); g.addColorStop(0.16,b.color);
+      // koyu kenar
+      g.addColorStop(1, shade(b.color, -18));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2); ctx.fill();
+      // numara
+      if(b.group !== 'cue'){
+        ctx.fillStyle = '#f3f6fb'; ctx.beginPath(); ctx.arc(b.x,b.y,BALL_R*0.5,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#111'; ctx.font='bold 10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(b.number), b.x, b.y+0.3);
+      }
+    }
+
+    // Çok basit renk shade (hex veya hsl geçişli)
     function shade(input, pct){
       try{
         if(typeof input !== 'string') return input;
@@ -177,6 +210,7 @@
           return `rgb(${f(r)},${f(g)},${f(b)})`;
         }
         if(s.startsWith('hsl')){
+          // basitçe aydınlığı değiştir
           const m = s.match(/hsl\(([-\d.]+)\s*,?\s*([\d.]+)%\s*,?\s*([\d.]+)%\)/i);
           if(m){ let h=+m[1], sat=+m[2], l=+m[3]; l = clamp(l + pct, 0, 100); return `hsl(${h} ${sat}% ${l}%)`; }
         }
@@ -186,8 +220,12 @@
 
     function roundRect(ctx,x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill) ctx.fill(); else ctx.stroke(); }
 
+    // Fizik: basit top-top elastik çarpışma
     function physicsStep(){
+      // Hareket
       for(const b of balls) b.step();
+
+      // Bant çarpışması
       for(const b of balls){ if(b.inPocket) continue;
         if(b.x - BALL_R < origin.x){ b.x = origin.x + BALL_R; b.vx = Math.abs(b.vx)*0.9; playHit(Math.abs(b.vx)); }
         if(b.x + BALL_R > origin.x + WIDTH){ b.x = origin.x + WIDTH - BALL_R; b.vx = -Math.abs(b.vx)*0.9; playHit(Math.abs(b.vx)); }
@@ -195,15 +233,20 @@
         if(b.y + BALL_R > origin.y + HEIGHT){ b.y = origin.y + HEIGHT - BALL_R; b.vy = -Math.abs(b.vy)*0.9; playHit(Math.abs(b.vy)); }
       }
 
+      // Cepler
       for(const b of balls){ if(b.inPocket) continue;
         for(const p of pockets){ const dx=b.x-p.x, dy=b.y-p.y, d=Math.hypot(dx,dy);
-          if(d < POCKET_R){
+          if(d < POCKET_R){ // cep
             b.inPocket = true; b.vx = b.vy = 0; playPocket(); pottedThisShot.push(b);
-            if(b.group==='cue'){ setTimeout(()=>{ b.inPocket = false; b.x = origin.x + WIDTH*0.25; b.y = origin.y + HEIGHT/2; b.vx=b.vy=0; updateStatus('Faul: Beyaz top delik -> rakip serbest atış'); currentPlayer = 3 - currentPlayer; }, 600); }
+            // cue ball faul ise  -> handle later
+            if(b.group==='cue'){ setTimeout(()=>{ // cue ball yeniden yerleştir
+              b.inPocket = false; b.x = origin.x + WIDTH*0.25; b.y = origin.y + HEIGHT/2; b.vx=b.vy=0; updateStatus('Faul: Beyaz top delik -> rakip serbest atış');
+            }, 600); }
           }
         }
       }
 
+      // Top-top çarpışma
       for(let i=0;i<balls.length;i++){
         const A = balls[i]; if(A.inPocket) continue;
         for(let j=i+1;j<balls.length;j++){
@@ -211,54 +254,91 @@
           const dx = B.x - A.x, dy = B.y - A.y; const dist = Math.hypot(dx,dy);
           const minDist = BALL_R*2;
           if(dist>0 && dist < minDist){
+            // düzelt
             const overlap = (minDist - dist)/2;
             const nx = dx/dist, ny = dy/dist;
             A.x -= nx*overlap; A.y -= ny*overlap; B.x += nx*overlap; B.y += ny*overlap;
+            // hızlar
             const dvx = B.vx - A.vx, dvy = B.vy - A.vy;
             const rel = dvx*nx + dvy*ny;
             if(rel > 0) continue;
-            const impulse = - (1.0 + 0.02) * rel;
+            const impulse = - (1.0 + 0.02) * rel; // küçük enerji transferi
             A.vx -= impulse*nx; A.vy -= impulse*ny; B.vx += impulse*nx; B.vy += impulse*ny;
+            // çarpışmada ses
             playHit(Math.abs(impulse));
+            // oyun kuralları için son teması kaydet
             if(A.group !== 'cue') lastTouchedBall = A; if(B.group !== 'cue') lastTouchedBall = B;
           }
         }
+      }
+
+      // Tüm toplar durdu mu?
+      const moving = balls.some(b => !b.inPocket && (Math.abs(b.vx) > VELOCITY_EPS || Math.abs(b.vy) > VELOCITY_EPS));
+      if(!moving && !canShoot){ // vuruş bitti
+        resolveShot();
       }
     }
 
     function playHit(strength){ if(muted) return; try{ sfxHit.volume = clamp(strength/6, 0, 1); sfxHit.currentTime = 0; sfxHit.play(); }catch(e){} }
     function playPocket(){ if(muted) return; try{ sfxPocket.currentTime = 0; sfxPocket.play(); }catch(e){} }
 
-    function handleShotEnd(){
+    // Basit kural çözümü (ilk parça) — atış bitince çalışır
+    function resolveShot(){
       canShoot = true;
-      // Grup atanması
+      // Eğer henüz gruplar atanmadı ve bir top (solid/stripe) cebe girdiyse atayan oyuncu kazanır
       if(!assignedGroup[1] && !assignedGroup[2]){
+        // pottedThisShot'ta solid veya stripe bulunan varsa currentPlayer'a atama yap
         const solid = pottedThisShot.find(b=>b.group==='solid');
         const stripe = pottedThisShot.find(b=>b.group==='stripe');
-        if(solid && !stripe){ assignedGroup[currentPlayer]='solid'; assignedGroup[3-currentPlayer]='stripe'; }
-        else if(stripe && !solid){ assignedGroup[currentPlayer]='stripe'; assignedGroup[3-currentPlayer]='solid'; }
+        if(solid && !stripe){ assignedGroup[currentPlayer] = 'solid'; assignedGroup[3-currentPlayer] = 'stripe'; updateStatus(`Oyuncu ${currentPlayer} = solid. Sıra: Oyuncu ${currentPlayer}`); }
+        else if(stripe && !solid){ assignedGroup[currentPlayer] = 'stripe'; assignedGroup[3-currentPlayer] = 'solid'; updateStatus(`Oyuncu ${currentPlayer} = stripe. Sıra: Oyuncu ${currentPlayer}`); }
       }
 
+      // Kazanç kontrolü: Eğer 8 top cebe girmişse -> kural: 8 topu kendi grubundan sonra sokarsa kazanır
       const eight = pottedThisShot.find(b=>b.group==='eight');
       if(eight){
+        // rakip mi? kontrol: eğer oyuncunun grubunda hala top varsa 8'i erken soktu demektir -> kaybeder
         const myGroup = assignedGroup[currentPlayer];
-        if(myGroup && balls.filter(b=>!b.inPocket && b.group===myGroup).length===0){ updateStatus(`Oyuncu ${currentPlayer} 8'i soktu — Kazandı!`); canShoot=false; return; }
-        else { updateStatus(`Oyuncu ${currentPlayer} 8'i erken soktu — Kaybetti!`); canShoot=false; return; }
+        if(myGroup){
+          const remainingMyGroup = balls.filter(b=>!b.inPocket && b.group===myGroup);
+          if(remainingMyGroup.length>0){ // erken soktu
+            updateStatus(`Oyuncu ${currentPlayer} 8'i erken soktu — Oyunu kaybetti!`);
+            canShoot = false; // oyun bitti
+            return;
+          }else{
+            updateStatus(`Oyuncu ${currentPlayer} 8'i soktu — Oyunu kazandı!`);
+            canShoot = false; return;
+          }
+        }else{
+          // grup atanmadıysa 8'i erken sokma kaybettirir
+          updateStatus(`8'i erken soktu — Oyunu kaybetti!`); canShoot = false; return;
+        }
       }
 
+      // Faul: beyaz top deliğe girdi mi? (burada cue handling basit)
       const cuePotted = pottedThisShot.find(b=>b.group==='cue');
-      if(cuePotted){ currentPlayer=3-currentPlayer; updateStatus(`Faul: Beyaz top delik. Sıra: Oyuncu ${currentPlayer}`); }
-      else {
+      if(cuePotted){ // rakibe serbest yerleştirme ver (simple)
+        currentPlayer = 3 - currentPlayer; updateStatus(`Faul: Beyaz top delik. Sıra: Oyuncu ${currentPlayer}`);
+      }else{
+        // Eğer bu atışta hiç pottedThisShot yoksa veya ilk temas bizim grubumuz dışındaysa sıra değişir
         const myGroup = assignedGroup[currentPlayer];
-        const anyMine = pottedThisShot.some(b=>b.group===myGroup);
-        if(!anyMine) currentPlayer=3-currentPlayer;
-        updateStatus(`Sıra: Oyuncu ${currentPlayer}`);
+        if(pottedThisShot.length===0){
+          // eğer ilk temasta rakibin grubuna temas ettiyse de sıra değişir — burada basit: lastTouchedBall kontrol
+          if(myGroup && lastTouchedBall && lastTouchedBall.group !== myGroup){ currentPlayer = 3 - currentPlayer; updateStatus(`Sıra geçti: Oyuncu ${currentPlayer}`); }
+        }else{
+          // eğer hala atayanın topu cebe girdi ise aynı oyuncu devam eder
+          const anyMine = pottedThisShot.some(b=> b.group === assignedGroup[currentPlayer]);
+          if(!anyMine) { currentPlayer = 3 - currentPlayer; updateStatus(`Sıra geçti: Oyuncu ${currentPlayer}`); }
+          else updateStatus(`Oyuncu ${currentPlayer} devam ediyor`);
+        }
       }
 
-      pottedThisShot=[];
-      lastTouchedBall=null;
+      // temizle
+      pottedThisShot = [];
+      lastTouchedBall = null;
     }
 
+    // basit çekim: tıklayınca beyaz topa kuvvet ver (ileride sürükle-bırak uygula)
     canvas.addEventListener('click', (e)=>{
       if(!canShoot) return;
       const rect = canvas.getBoundingClientRect();
@@ -271,25 +351,36 @@
       updateStatus(`Oyuncu ${currentPlayer} vuruş yaptı`);
     });
 
-    window.addEventListener('keydown', (e)=>{
-      if(e.key==='r'||e.key==='R') rack8();
-      if(e.key==='m'||e.key==='M'){ muted=!muted; btnMute.textContent = muted? 'Sesi Aç' : 'Sesi Kapat'; }
-    });
+    // Basit kontrol tuşları
+    window.addEventListener('keydown',(e)=>{ if(e.key.toLowerCase()==='r'){ rack8(); } if(e.key.toLowerCase()==='m'){ muted = !muted; btnMute.textContent = muted? 'Sesi Aç' : 'Sesi Kapat'; } if(e.key.toLowerCase()==='p'){ practiceSetup(); } });
+    btnRack.onclick = rack8; btnPractice.onclick = practiceSetup; btnToggleGuide.onclick = ()=>{ showGuide = !showGuide; }; btnMute.onclick = ()=>{ muted = !muted; btnMute.textContent = muted? 'Sesi Aç' : 'Sesi Kapat'; };
 
-    btnRack.addEventListener('click', rack8);
-    btnPractice.addEventListener('click', practiceSetup);
-    btnMute.addEventListener('click', ()=>{ muted=!muted; btnMute.textContent = muted? 'Sesi Aç' : 'Sesi Kapat'; });
+    // Render + loop
+    function render(){ drawTable(); drawBalls(); if(showGuide) drawGuide(); }
 
-    function loop(){
-      physicsStep(); drawTable(); drawBalls();
-      if(balls.every(b=>b.speed()===0)) handleShotEnd();
-      requestAnimationFrame(loop);
+    function drawGuide(){
+      // basit: hangi oyuncunun hangi grup olduğu, kalan toplar
+      ctx.save(); ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fillRect(origin.x+WIDTH+10, origin.y, 160, 120);
+      ctx.fillStyle='#dfe9f5'; ctx.font='13px system-ui'; ctx.fillText(`Sıra: Oyuncu ${currentPlayer}`, origin.x+WIDTH+20, origin.y+20);
+      ctx.fillText(`Oyuncu1: ${assignedGroup[1]|| '-'}  Oyuncu2: ${assignedGroup[2]|| '-'}`, origin.x+WIDTH+20, origin.y+40);
+      const remainingSolid = balls.filter(b=>!b.inPocket && b.group==='solid').length;
+      const remainingStripe = balls.filter(b=>!b.inPocket && b.group==='stripe').length;
+      ctx.fillText(`Solid: ${remainingSolid}`, origin.x+WIDTH+20, origin.y+70);
+      ctx.fillText(`Stripe: ${remainingStripe}`, origin.x+WIDTH+20, origin.y+90);
+      ctx.restore();
     }
 
-    rack8();
-    loop();
+    function drawLoop(){ render(); requestAnimationFrame(drawLoop); }
+
+    function mainLoop(){ physicsStep(); setTimeout(mainLoop, 1000/FPS); }
+
+    // Başlangıç
+    rack8(); drawLoop(); mainLoop();
+
+    // Yardımcı: küçük validasyon - pencere boyutu değişirse origin güncelle
+    window.addEventListener('resize', ()=>{ origin = {x:(canvas.width-WIDTH)/2, y:(canvas.height-HEIGHT)/2}; for(let i=0;i<pockets.length;i++){ if(i===0) pockets[i].x=origin.x; pockets[i].x = [origin.x, origin.x + WIDTH/2, origin.x + WIDTH, origin.x, origin.x + WIDTH/2, origin.x + WIDTH][i]; pockets[i].y = [origin.y, origin.y - 6, origin.y, origin.y + HEIGHT, origin.y + HEIGHT + 6, origin.y + HEIGHT][i]; } });
+
   })();
   </script>
 </body>
 </html>
-
